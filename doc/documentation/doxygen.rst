@@ -173,11 +173,11 @@ In addition to features `shared by all doc generators <{filename}/documentation.
 -   Table of contents is generated for compound references as well, containing
     all sections of detailed description together with anchors to member
     listings
--   Private members and anonymous namespaces are always ignored, however
+-   By default private members and anonymous namespaces are always ignored, however
     private virtual functions are listed in case they are documented.
     See `Private virtual functions`_ for more information.
 -   Inner classes are listed in the public/protected type sections instead of
-    being listed in a separate section ignoring their public/private status
+    being listed in a separate section (by default ignoring their public/private status)
 -   Class references contain also their template specification on the linked
     page
 -   Function signatures don't contain :cpp:`constexpr` and :cpp:`noexcept`

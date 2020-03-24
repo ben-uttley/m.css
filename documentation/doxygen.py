@@ -2402,7 +2402,7 @@ def build_search_data(state: State, merge_subtrees=True, add_lookahead_barriers=
 
     return serialize_search_data(trie, map, search_type_map, symbol_count, merge_subtrees=merge_subtrees, merge_prefixes=merge_prefixes)
 
-def parse_xml(state: State, xml: str):
+def parse_xml(state: State, xml: str, include_private: bool):
     # Reset counter for unique math formulas
     latex2svgextra.counter = 0
 
@@ -2423,8 +2423,8 @@ def parse_xml(state: State, xml: str):
     assert compounddef.tag == 'compounddef'
     assert len([i for i in root]) == 1
 
-    # Ignoring private structs/classes and unnamed namespaces
-    if ((compounddef.attrib['kind'] in ['struct', 'class', 'union'] and compounddef.attrib['prot'] == 'private') or
+    # Ignore private structs/classes and unnamed namespaces, unless include_private passed as true
+    if (not include_private and (compounddef.attrib['kind'] in ['struct', 'class', 'union'] and compounddef.attrib['prot'] == 'private') or
         (compounddef.attrib['kind'] == 'namespace' and '@' in compounddef.find('compoundname').text)):
         logging.debug("{}: only private things, skipping".format(state.current))
         return None
@@ -2630,8 +2630,8 @@ def parse_xml(state: State, xml: str):
         elif compounddef_child.tag in ['innernamespace', 'innerclass']:
             id = compounddef_child.attrib['refid']
 
-            # Add it only if it's not private and we have documentation for it
-            if (compounddef_child.tag != 'innerclass' or not compounddef_child.attrib['prot'] == 'private') and id in state.compounds and state.compounds[id].has_details:
+            # Add it only we have documentation for it and dependant on the include_private value if it's not private
+            if (compounddef_child.tag != 'innerclass' or (not include_private and not compounddef_child.attrib['prot'] == 'private')) and id in state.compounds and state.compounds[id].has_details:
                 symbol = state.compounds[id]
 
                 if compounddef_child.tag == 'innernamespace':
@@ -2674,8 +2674,8 @@ def parse_xml(state: State, xml: str):
             if 'refid' in compounddef_child.attrib:
                 id = compounddef_child.attrib['refid']
 
-                # Add it only if it's not private and we have documentation for it
-                if not compounddef_child.attrib['prot'] == 'private' and id in state.compounds and state.compounds[id].has_details:
+                # Add it only if we have documentation for it and dependant upon the include_private value if it's not private
+                if (not include_private and not compounddef_child.attrib['prot'] == 'private') and id in state.compounds and state.compounds[id].has_details:
                     symbol = state.compounds[id]
 
                     class_ = Empty()
@@ -2698,8 +2698,8 @@ def parse_xml(state: State, xml: str):
             if 'refid' in compounddef_child.attrib:
                 id = compounddef_child.attrib['refid']
 
-                # Add it only if it's not private and we have documentation for it
-                if not compounddef_child.attrib['prot'] == 'private' and id in state.compounds and state.compounds[id].has_details:
+                # Add it only if we have documentation for it and dependant upon the include_private value if it's not private 
+                if (include_private or not compounddef_child.attrib['prot'] == 'private') and id in state.compounds and state.compounds[id].has_details:
                     symbol = state.compounds[id]
 
                     class_ = Empty()
@@ -2873,10 +2873,9 @@ def parse_xml(state: State, xml: str):
                         if var.has_details: compound.has_var_details = True
 
             elif compounddef_child.attrib['kind'] in ['private-func', 'private-slot']:
-                # Gather only private functions that are virtual and
-                # documented
+                # Gather only private functions that are documented and dependant upon the include_private value those that are virtual
                 for memberdef in compounddef_child:
-                    if memberdef.attrib['virt'] == 'non-virtual' or (not memberdef.find('briefdescription').text and not memberdef.find('detaileddescription').text):
+                    if (not include_private and memberdef.attrib['virt'] == 'non-virtual') or (not memberdef.find('briefdescription').text and not memberdef.find('detaileddescription').text):
                         assert True # coverage.py can't handle continue
                         continue # pragma: no cover
 
@@ -2950,9 +2949,8 @@ def parse_xml(state: State, xml: str):
                             list += [('typedef', typedef)]
                             if typedef.has_details: compound.has_typedef_details = True
                     elif memberdef.attrib['kind'] in ['function', 'signal', 'slot']:
-                        # Gather only private functions that are virtual and
-                        # documented
-                        if memberdef.attrib['prot'] == 'private' and (memberdef.attrib['virt'] == 'non-virtual' or (not memberdef.find('briefdescription').text and not memberdef.find('detaileddescription').text)):
+                        # Gather only private functions that are documented and dependant upon the include_private value those that are virtual
+                        if (not include_private and memberdef.attrib['prot'] == 'private' and (memberdef.attrib['virt'] == 'non-virtual') or (not memberdef.find('briefdescription').text and not memberdef.find('detaileddescription').text)):
                             assert True # coverage.py can't handle continue
                             continue # pragma: no cover
 
@@ -3486,7 +3484,7 @@ default_index_pages = ['pages', 'files', 'namespaces', 'modules', 'annotated']
 default_wildcard = '*.xml'
 default_templates = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'templates/doxygen/')
 
-def run(doxyfile, *, templates=default_templates, wildcard=default_wildcard, index_pages=default_index_pages, search_add_lookahead_barriers=True, search_merge_subtrees=True, search_merge_prefixes=True, sort_globbed_files=False):
+def run(doxyfile, *, templates=default_templates, wildcard=default_wildcard, index_pages=default_index_pages, search_add_lookahead_barriers=True, search_merge_subtrees=True, search_merge_prefixes=True, sort_globbed_files=False, include_private=False):
     state = State()
     state.basedir = os.path.dirname(doxyfile)
 
@@ -3567,7 +3565,7 @@ def run(doxyfile, *, templates=default_templates, wildcard=default_wildcard, ind
                     # that'd add it also for nested templates :(
                     f.write(b'\n')
         else:
-            parsed = parse_xml(state, file)
+            parsed = parse_xml(state, file, include_private)
             if not parsed: continue
 
             template = env.get_template('{}.html'.format(parsed.compound.kind))
@@ -3670,6 +3668,7 @@ if __name__ == '__main__': # pragma: no cover
     parser.add_argument('--wildcard', help="only process files matching the wildcard", default=default_wildcard)
     parser.add_argument('--index-pages', nargs='+', help="index page templates", default=default_index_pages)
     parser.add_argument('--no-doxygen', help="don't run Doxygen before", action='store_true')
+    parser.add_argument('--include-private', help="document private functions and anonymous namespaces", action='store_true')
     parser.add_argument('--search-no-subtree-merging', help="don't merge search data subtrees", action='store_true')
     parser.add_argument('--search-no-lookahead-barriers', help="don't insert search lookahead barriers", action='store_true')
     parser.add_argument('--search-no-prefix-merging', help="don't merge search result prefixes", action='store_true')
@@ -3689,4 +3688,5 @@ if __name__ == '__main__': # pragma: no cover
         logging.debug("running Doxygen on {}".format(args.doxyfile))
         subprocess.run(["doxygen", doxyfile], cwd=os.path.dirname(doxyfile))
 
-    run(doxyfile, templates=os.path.abspath(args.templates), wildcard=args.wildcard, index_pages=args.index_pages, search_merge_subtrees=not args.search_no_subtree_merging, search_add_lookahead_barriers=not args.search_no_lookahead_barriers, search_merge_prefixes=not args.search_no_prefix_merging)
+
+    run(doxyfile, templates=os.path.abspath(args.templates), wildcard=args.wildcard, index_pages=args.index_pages, search_merge_subtrees=not args.search_no_subtree_merging, search_add_lookahead_barriers=not args.search_no_lookahead_barriers, search_merge_prefixes=not args.search_no_prefix_merging, include_private=args.include_private)
